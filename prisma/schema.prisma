@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StaffRole {
+  OWNER
+  ADMIN
+  HOST
+}
+
+enum BookingStatus {
+  NEW
+  CONFIRMED
+  REJECTED
+  ARRIVED
+  NO_SHOW
+  CANCELLED
+}
+
+enum OrderType {
+  PICKUP
+  TABLE
+  DELIVERY
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+model Staff {
+  id        String    @id @default(cuid())
+  name      String
+  role      StaffRole @default(HOST)
+  phone        String?   @unique // логин сотрудника: 7XXXXXXXXXX
+  passwordHash String?   // формат: salt:hash (scrypt)
+  maxUserId String?   // заполняется, когда сотрудник запустил бота в MAX
+  active    Boolean   @default(true)
+}
+
+model Table {
+  id       String    @id @default(cuid())
+  name     String
+  zone     String    // bar | hall | sofa
+  capacity Int
+  active   Boolean   @default(true)
+  bookings Booking[]
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  startsAt        DateTime
+  durationMin     Int           @default(90)
+  guests          Int
+  status          BookingStatus @default(NEW)
+  name            String
+  phone           String
+  comment         String?
+  cancelTokenHash String?       @unique // токен создаётся при подтверждении, в базе только хэш
+  tableId         String?
+  table           Table?        @relation(fields: [tableId], references: [id])
+  confirmedById   String?
+  createdAt       DateTime      @default(now())
+  orders          Order[]
+
+  @@index([tableId, startsAt])
+  @@index([status, startsAt])
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  code         String      @unique
+  type         OrderType
+  status       OrderStatus @default(NEW)
+  name         String
+  phone        String
+  comment      String?
+  pickupAt     DateTime?
+  address      String?
+  totalKopecks Int         @default(0)
+  bookingId    String?
+  booking      Booking?    @relation(fields: [bookingId], references: [id])
+  items        OrderItem[]
+  createdAt    DateTime    @default(now())
+
+  @@index([status])
+}
+
+model MenuCategory {
+  id    String     @id @default(cuid())
+  name  String
+  sort  Int        @default(0)
+  items MenuItem[]
+}
+
+model MenuItem {
+  id           String       @id @default(cuid())
+  categoryId   String
+  category     MenuCategory @relation(fields: [categoryId], references: [id])
+  name         String
+  description  String?
+  priceKopecks Int
+  available    Boolean      @default(true) // стоп-лист
+  sort         Int          @default(0)
+  orderItems   OrderItem[]
+}
+
+model OrderItem {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId   String
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+  nameSnapshot String   // название и цена на момент заказа
+  priceKopecks Int
+  quantity     Int
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  startsAt    DateTime
+  description String?
+  published   Boolean  @default(false)
+}
+
+model PhoneVerification {
+  id        String   @id @default(cuid())
+  phone     String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model VerifiedPhone {
+  phone      String   @id
+  verifiedAt DateTime
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  channel   String   // MAX | SMS
+  kind      String   // staff_new_booking, sms_code, ...
+  recipient String
+  status    String   // sent | stub | failed
+  error     String?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value Json   // часы работы, длительность слота и т.д.
+}
